@@ -230,18 +230,52 @@ class ScreenRecorder {
 
 // Check browser support
 function checkBrowserSupport() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isSecure = window.isSecureContext;
+    const hasAPI = navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia;
+
+    // Mobile devices don't support screen recording
+    if (isMobile) {
         document.querySelector('main').innerHTML = `
             <div style="text-align: center; padding: 3rem 1rem;">
-                <h2 style="margin-bottom: 1rem;">Navigateur non supporté</h2>
+                <h2 style="margin-bottom: 1rem;">Appareil non supporté</h2>
                 <p style="color: var(--text-secondary);">
-                    Votre navigateur ne supporte pas l'enregistrement d'écran.<br>
-                    Utilisez Chrome, Edge ou Firefox sur ordinateur.
+                    L'enregistrement d'écran n'est pas disponible sur mobile.<br>
+                    Utilisez un ordinateur avec Chrome, Edge ou Firefox.
                 </p>
             </div>
         `;
         return false;
     }
+
+    // Not secure context (HTTP instead of HTTPS)
+    if (!isSecure) {
+        document.querySelector('main').innerHTML = `
+            <div style="text-align: center; padding: 3rem 1rem;">
+                <h2 style="margin-bottom: 1rem;">Connexion non sécurisée</h2>
+                <p style="color: var(--text-secondary);">
+                    L'enregistrement d'écran nécessite HTTPS.<br>
+                    Accédez au site via une connexion sécurisée.
+                </p>
+            </div>
+        `;
+        return false;
+    }
+
+    // API not available
+    if (!hasAPI) {
+        document.querySelector('main').innerHTML = `
+            <div style="text-align: center; padding: 3rem 1rem;">
+                <h2 style="margin-bottom: 1rem;">Navigateur non supporté</h2>
+                <p style="color: var(--text-secondary);">
+                    Votre navigateur ne supporte pas l'enregistrement d'écran.<br>
+                    Utilisez Chrome, Edge ou Firefox (version récente).
+                </p>
+            </div>
+        `;
+        return false;
+    }
+
     return true;
 }
 
