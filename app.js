@@ -6,9 +6,12 @@ class ScreenRecorder {
         this.startTime = null;
         this.timerInterval = null;
         this.selectedSource = 'screen';
+        this.mimeType = null;
+        this.fileExtension = null;
 
         this.initElements();
         this.initEventListeners();
+        this.detectBestFormat();
     }
 
     initElements() {
@@ -31,6 +34,33 @@ class ScreenRecorder {
         });
     }
 
+    detectBestFormat() {
+        // Prioritize MP4, fallback to WebM
+        const formats = [
+            { mimeType: 'video/mp4;codecs=avc1,mp4a.40.2', ext: 'mp4' },
+            { mimeType: 'video/mp4;codecs=avc1', ext: 'mp4' },
+            { mimeType: 'video/mp4', ext: 'mp4' },
+            { mimeType: 'video/webm;codecs=vp9,opus', ext: 'webm' },
+            { mimeType: 'video/webm;codecs=vp8,opus', ext: 'webm' },
+            { mimeType: 'video/webm;codecs=vp9', ext: 'webm' },
+            { mimeType: 'video/webm;codecs=vp8', ext: 'webm' },
+            { mimeType: 'video/webm', ext: 'webm' }
+        ];
+
+        for (const format of formats) {
+            if (MediaRecorder.isTypeSupported(format.mimeType)) {
+                this.mimeType = format.mimeType;
+                this.fileExtension = format.ext;
+                console.log(`Format selected: ${format.mimeType}`);
+                return;
+            }
+        }
+
+        // Ultimate fallback
+        this.mimeType = 'video/webm';
+        this.fileExtension = 'webm';
+    }
+
     selectSource(btn) {
         this.sourceButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -47,7 +77,6 @@ class ScreenRecorder {
             audio: this.audioToggle.checked
         };
 
-        // For tab capture, prefer current tab audio
         if (this.selectedSource === 'tab' && this.audioToggle.checked) {
             options.preferCurrentTab = true;
         }
@@ -57,24 +86,21 @@ class ScreenRecorder {
 
     async startRecording() {
         try {
-            // Get screen stream
             this.stream = await navigator.mediaDevices.getDisplayMedia(
                 this.getDisplayMediaOptions()
             );
 
-            // Show preview
             this.preview.srcObject = this.stream;
             this.preview.classList.add('active');
             this.placeholder.classList.add('hidden');
 
-            // Handle stream ending (user clicks "Stop sharing")
             this.stream.getVideoTracks()[0].addEventListener('ended', () => {
                 this.stopRecording();
             });
 
-            // Setup MediaRecorder
-            const mimeType = this.getSupportedMimeType();
-            this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+            this.mediaRecorder = new MediaRecorder(this.stream, {
+                mimeType: this.mimeType
+            });
 
             this.recordedChunks = [];
 
@@ -88,15 +114,12 @@ class ScreenRecorder {
                 this.saveRecording();
             };
 
-            // Start recording
-            this.mediaRecorder.start(1000); // Collect data every second
+            this.mediaRecorder.start(1000);
 
-            // Update UI
             this.btnStart.disabled = true;
             this.btnStop.disabled = false;
             this.recordingIndicator.classList.add('active');
 
-            // Start timer
             this.startTime = Date.now();
             this.timerInterval = setInterval(() => this.updateTimer(), 1000);
 
@@ -104,7 +127,6 @@ class ScreenRecorder {
             console.error('Error starting recording:', error);
 
             if (error.name === 'NotAllowedError') {
-                // User cancelled the screen picker
                 return;
             }
 
@@ -122,7 +144,6 @@ class ScreenRecorder {
             this.stream = null;
         }
 
-        // Reset UI
         this.preview.srcObject = null;
         this.preview.classList.remove('active');
         this.placeholder.classList.remove('hidden');
@@ -130,7 +151,6 @@ class ScreenRecorder {
         this.btnStop.disabled = true;
         this.recordingIndicator.classList.remove('active');
 
-        // Stop timer
         if (this.timerInterval) {
             clearInterval(this.timerInterval);
             this.timerInterval = null;
@@ -138,42 +158,61 @@ class ScreenRecorder {
         this.timer.textContent = '00:00';
     }
 
-    saveRecording() {
+    async saveRecording() {
         if (this.recordedChunks.length === 0) return;
 
-        const blob = new Blob(this.recordedChunks, {
-            type: this.getSupportedMimeType()
-        });
+        const blob = new Blob(this.recordedChunks, { type: this.mimeType });
+        const fileName = `recording-${this.getTimestamp()}.${this.fileExtension}`;
 
+        // Try File System Access API (allows user to choose save location)
+        if ('showSaveFilePicker' in window) {
+            try {
+                const fileHandle = await window.showSaveFilePicker({
+                    suggestedName: fileName,
+                    types: [
+                        {
+                            description: 'Video file',
+                            accept: {
+                                [this.mimeType.split(';')[0]]: [`.${this.fileExtension}`]
+                            }
+                        }
+                    ]
+                });
+
+                const writable = await fileHandle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+
+                this.recordedChunks = [];
+                return;
+            } catch (error) {
+                // User cancelled the save dialog
+                if (error.name === 'AbortError') {
+                    // Still offer fallback download
+                    if (confirm('Voulez-vous télécharger le fichier directement ?')) {
+                        this.fallbackDownload(blob, fileName);
+                    }
+                    this.recordedChunks = [];
+                    return;
+                }
+                console.error('Save file error:', error);
+            }
+        }
+
+        // Fallback for browsers without File System Access API
+        this.fallbackDownload(blob, fileName);
+        this.recordedChunks = [];
+    }
+
+    fallbackDownload(blob, fileName) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `recording-${this.getTimestamp()}.webm`;
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-
-        this.recordedChunks = [];
-    }
-
-    getSupportedMimeType() {
-        const types = [
-            'video/webm;codecs=vp9,opus',
-            'video/webm;codecs=vp8,opus',
-            'video/webm;codecs=vp9',
-            'video/webm;codecs=vp8',
-            'video/webm',
-            'video/mp4'
-        ];
-
-        for (const type of types) {
-            if (MediaRecorder.isTypeSupported(type)) {
-                return type;
-            }
-        }
-
-        return 'video/webm';
     }
 
     updateTimer() {
