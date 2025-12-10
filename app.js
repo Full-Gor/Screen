@@ -236,12 +236,42 @@ function checkBrowserSupport() {
 
     // Mobile devices don't support screen recording
     if (isMobile) {
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         document.querySelector('main').innerHTML = `
-            <div style="text-align: center; padding: 3rem 1rem;">
-                <h2 style="margin-bottom: 1rem;">Appareil non supporté</h2>
-                <p style="color: var(--text-secondary);">
-                    L'enregistrement d'écran n'est pas disponible sur mobile.<br>
-                    Utilisez un ordinateur avec Chrome, Edge ou Firefox.
+            <div style="text-align: center; padding: 2rem 1rem;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; margin-bottom: 1rem;">
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                    <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                </svg>
+                <h2 style="margin-bottom: 1rem; font-size: 1.3rem;">Non disponible sur mobile</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 2rem; line-height: 1.6;">
+                    Les navigateurs mobiles ne permettent pas<br>l'enregistrement d'écran via un site web.
+                </p>
+                <div style="background: var(--bg-secondary); border-radius: 12px; padding: 1.5rem; text-align: left; border: 1px solid var(--border);">
+                    <p style="font-weight: 500; margin-bottom: 1rem; color: var(--text-primary);">Utilisez plutôt :</p>
+                    ${isIOS ? `
+                    <div style="display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 1rem;">
+                        <span style="font-size: 1.5rem;">📱</span>
+                        <div>
+                            <p style="font-weight: 500; color: var(--text-primary);">iPhone / iPad</p>
+                            <p style="color: var(--text-secondary); font-size: 0.9rem;">Centre de contrôle → Bouton enregistrement (cercle)</p>
+                        </div>
+                    </div>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem;">
+                        💡 Si absent : Réglages → Centre de contrôle → Ajouter "Enregistrement de l'écran"
+                    </p>
+                    ` : `
+                    <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                        <span style="font-size: 1.5rem;">🤖</span>
+                        <div>
+                            <p style="font-weight: 500; color: var(--text-primary);">Android</p>
+                            <p style="color: var(--text-secondary); font-size: 0.9rem;">Balayez vers le bas → Paramètres rapides → "Enregistrement d'écran"</p>
+                        </div>
+                    </div>
+                    `}
+                </div>
+                <p style="margin-top: 2rem; color: var(--text-secondary); font-size: 0.85rem;">
+                    💻 Sur ordinateur, ce site fonctionne avec Chrome, Edge ou Firefox
                 </p>
             </div>
         `;
