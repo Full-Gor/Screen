@@ -60,6 +60,15 @@
                             </svg>
                             <span>Onglet</span>
                         </button>
+                        <button class="source-btn" data-source="region" id="btnRegion">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 2L6 6L2 6"></path>
+                                <path d="M18 2L18 6L22 6"></path>
+                                <path d="M6 22L6 18L2 18"></path>
+                                <path d="M18 22L18 18L22 18"></path>
+                            </svg>
+                            <span>Zone</span>
+                        </button>
                     </div>
                 </div>
 
@@ -91,6 +100,15 @@
         <footer>
             <p>Fonctionne sur Chrome, Edge, Firefox | Les enregistrements restent sur votre appareil</p>
         </footer>
+    </div>
+
+    <!-- Region selection overlay -->
+    <div id="regionOverlay" class="region-overlay">
+        <div class="region-instructions">
+            <p>Dessinez la zone à enregistrer</p>
+            <span>Cliquez et glissez pour sélectionner • Échap pour annuler</span>
+        </div>
+        <div id="selectionBox" class="selection-box"></div>
     </div>
 
     <script src="app.js"></script>

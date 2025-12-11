@@ -3,11 +3,25 @@ class ScreenRecorder {
         this.mediaRecorder = null;
         this.recordedChunks = [];
         this.stream = null;
+        this.originalStream = null;
         this.startTime = null;
         this.timerInterval = null;
         this.selectedSource = 'screen';
         this.mimeType = null;
         this.fileExtension = null;
+
+        // Region selection
+        this.regionOverlay = null;
+        this.selectionBox = null;
+        this.region = null;
+        this.isSelecting = false;
+        this.selectionStart = { x: 0, y: 0 };
+
+        // Canvas for region cropping
+        this.canvas = null;
+        this.ctx = null;
+        this.videoElement = null;
+        this.animationFrame = null;
 
         this.initElements();
         this.initEventListeners();
@@ -23,19 +37,30 @@ class ScreenRecorder {
         this.btnStop = document.getElementById('btnStop');
         this.audioToggle = document.getElementById('audioToggle');
         this.sourceButtons = document.querySelectorAll('.source-btn');
+        this.regionOverlay = document.getElementById('regionOverlay');
+        this.selectionBox = document.getElementById('selectionBox');
     }
 
     initEventListeners() {
-        this.btnStart.addEventListener('click', () => this.startRecording());
+        this.btnStart.addEventListener('click', () => this.handleStart());
         this.btnStop.addEventListener('click', () => this.stopRecording());
 
         this.sourceButtons.forEach(btn => {
             btn.addEventListener('click', () => this.selectSource(btn));
         });
+
+        // Region selection events
+        this.regionOverlay.addEventListener('mousedown', (e) => this.onSelectionStart(e));
+        this.regionOverlay.addEventListener('mousemove', (e) => this.onSelectionMove(e));
+        this.regionOverlay.addEventListener('mouseup', (e) => this.onSelectionEnd(e));
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.regionOverlay.classList.contains('active')) {
+                this.hideRegionSelector();
+            }
+        });
     }
 
     detectBestFormat() {
-        // Prioritize MP4, fallback to WebM
         const formats = [
             { mimeType: 'video/mp4;codecs=avc1,mp4a.40.2', ext: 'mp4' },
             { mimeType: 'video/mp4;codecs=avc1', ext: 'mp4' },
@@ -56,7 +81,6 @@ class ScreenRecorder {
             }
         }
 
-        // Ultimate fallback
         this.mimeType = 'video/webm';
         this.fileExtension = 'webm';
     }
@@ -71,7 +95,8 @@ class ScreenRecorder {
         const options = {
             video: {
                 cursor: 'always',
-                displaySurface: this.selectedSource === 'screen' ? 'monitor' :
+                displaySurface: this.selectedSource === 'region' ? 'monitor' :
+                               this.selectedSource === 'screen' ? 'monitor' :
                                this.selectedSource === 'window' ? 'window' : 'browser'
             },
             audio: this.audioToggle.checked
@@ -82,6 +107,238 @@ class ScreenRecorder {
         }
 
         return options;
+    }
+
+    async handleStart() {
+        if (this.selectedSource === 'region') {
+            await this.startRegionSelection();
+        } else {
+            await this.startRecording();
+        }
+    }
+
+    // Region Selection Methods
+    async startRegionSelection() {
+        try {
+            // First, get the screen stream
+            this.originalStream = await navigator.mediaDevices.getDisplayMedia(
+                this.getDisplayMediaOptions()
+            );
+
+            // Show the region selector overlay
+            this.showRegionSelector();
+
+        } catch (error) {
+            console.error('Error getting display media:', error);
+            if (error.name !== 'NotAllowedError') {
+                alert('Impossible d\'accéder à l\'écran. Vérifiez les permissions.');
+            }
+        }
+    }
+
+    showRegionSelector() {
+        this.regionOverlay.classList.add('active');
+        this.selectionBox.classList.remove('active');
+        this.region = null;
+    }
+
+    hideRegionSelector() {
+        this.regionOverlay.classList.remove('active');
+        this.selectionBox.classList.remove('active');
+
+        // Stop the original stream if selection was cancelled
+        if (this.originalStream && !this.stream) {
+            this.originalStream.getTracks().forEach(track => track.stop());
+            this.originalStream = null;
+        }
+    }
+
+    onSelectionStart(e) {
+        this.isSelecting = true;
+        this.selectionStart = { x: e.clientX, y: e.clientY };
+        this.selectionBox.style.left = `${e.clientX}px`;
+        this.selectionBox.style.top = `${e.clientY}px`;
+        this.selectionBox.style.width = '0';
+        this.selectionBox.style.height = '0';
+        this.selectionBox.classList.add('active');
+    }
+
+    onSelectionMove(e) {
+        if (!this.isSelecting) return;
+
+        const currentX = e.clientX;
+        const currentY = e.clientY;
+
+        const left = Math.min(this.selectionStart.x, currentX);
+        const top = Math.min(this.selectionStart.y, currentY);
+        const width = Math.abs(currentX - this.selectionStart.x);
+        const height = Math.abs(currentY - this.selectionStart.y);
+
+        this.selectionBox.style.left = `${left}px`;
+        this.selectionBox.style.top = `${top}px`;
+        this.selectionBox.style.width = `${width}px`;
+        this.selectionBox.style.height = `${height}px`;
+        this.selectionBox.setAttribute('data-size', `${width} × ${height}`);
+    }
+
+    onSelectionEnd(e) {
+        if (!this.isSelecting) return;
+        this.isSelecting = false;
+
+        const currentX = e.clientX;
+        const currentY = e.clientY;
+
+        const left = Math.min(this.selectionStart.x, currentX);
+        const top = Math.min(this.selectionStart.y, currentY);
+        const width = Math.abs(currentX - this.selectionStart.x);
+        const height = Math.abs(currentY - this.selectionStart.y);
+
+        // Minimum size check
+        if (width < 50 || height < 50) {
+            alert('Zone trop petite. Sélectionnez une zone plus grande.');
+            this.selectionBox.classList.remove('active');
+            return;
+        }
+
+        // Store the region coordinates (relative to screen)
+        this.region = {
+            x: left,
+            y: top,
+            width: width,
+            height: height
+        };
+
+        this.hideRegionSelector();
+        this.startRegionRecording();
+    }
+
+    async startRegionRecording() {
+        try {
+            // Create a hidden video element to play the original stream
+            this.videoElement = document.createElement('video');
+            this.videoElement.srcObject = this.originalStream;
+            this.videoElement.muted = true;
+            await this.videoElement.play();
+
+            // Wait for video to have dimensions
+            await new Promise(resolve => {
+                if (this.videoElement.videoWidth > 0) {
+                    resolve();
+                } else {
+                    this.videoElement.onloadedmetadata = resolve;
+                }
+            });
+
+            // Calculate the scale factor between screen and video
+            const videoTrack = this.originalStream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            const videoWidth = settings.width || this.videoElement.videoWidth;
+            const videoHeight = settings.height || this.videoElement.videoHeight;
+
+            const scaleX = videoWidth / window.screen.width;
+            const scaleY = videoHeight / window.screen.height;
+
+            // Scaled region coordinates
+            const scaledRegion = {
+                x: Math.round(this.region.x * scaleX),
+                y: Math.round(this.region.y * scaleY),
+                width: Math.round(this.region.width * scaleX),
+                height: Math.round(this.region.height * scaleY)
+            };
+
+            // Create canvas for cropping
+            this.canvas = document.createElement('canvas');
+            this.canvas.width = scaledRegion.width;
+            this.canvas.height = scaledRegion.height;
+            this.ctx = this.canvas.getContext('2d');
+
+            // Start rendering loop
+            const renderFrame = () => {
+                if (this.ctx && this.videoElement) {
+                    this.ctx.drawImage(
+                        this.videoElement,
+                        scaledRegion.x, scaledRegion.y,
+                        scaledRegion.width, scaledRegion.height,
+                        0, 0,
+                        scaledRegion.width, scaledRegion.height
+                    );
+                }
+                this.animationFrame = requestAnimationFrame(renderFrame);
+            };
+            renderFrame();
+
+            // Get stream from canvas
+            const canvasStream = this.canvas.captureStream(30);
+
+            // Add audio track if present
+            const audioTracks = this.originalStream.getAudioTracks();
+            if (audioTracks.length > 0) {
+                canvasStream.addTrack(audioTracks[0]);
+            }
+
+            this.stream = canvasStream;
+
+            // Show preview
+            this.preview.srcObject = this.stream;
+            this.preview.classList.add('active');
+            this.placeholder.classList.add('hidden');
+
+            // Handle original stream ending
+            this.originalStream.getVideoTracks()[0].addEventListener('ended', () => {
+                this.stopRecording();
+            });
+
+            // Setup MediaRecorder
+            this.mediaRecorder = new MediaRecorder(this.stream, {
+                mimeType: this.mimeType
+            });
+
+            this.recordedChunks = [];
+
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.recordedChunks.push(event.data);
+                }
+            };
+
+            this.mediaRecorder.onstop = () => {
+                this.saveRecording();
+            };
+
+            this.mediaRecorder.start(1000);
+
+            // Update UI
+            this.btnStart.disabled = true;
+            this.btnStop.disabled = false;
+            this.recordingIndicator.classList.add('active');
+
+            this.startTime = Date.now();
+            this.timerInterval = setInterval(() => this.updateTimer(), 1000);
+
+        } catch (error) {
+            console.error('Error starting region recording:', error);
+            this.cleanupRegionRecording();
+            alert('Erreur lors du démarrage de l\'enregistrement.');
+        }
+    }
+
+    cleanupRegionRecording() {
+        if (this.animationFrame) {
+            cancelAnimationFrame(this.animationFrame);
+            this.animationFrame = null;
+        }
+        if (this.videoElement) {
+            this.videoElement.pause();
+            this.videoElement.srcObject = null;
+            this.videoElement = null;
+        }
+        if (this.originalStream) {
+            this.originalStream.getTracks().forEach(track => track.stop());
+            this.originalStream = null;
+        }
+        this.canvas = null;
+        this.ctx = null;
+        this.region = null;
     }
 
     async startRecording() {
@@ -139,6 +396,9 @@ class ScreenRecorder {
             this.mediaRecorder.stop();
         }
 
+        // Cleanup region recording resources
+        this.cleanupRegionRecording();
+
         if (this.stream) {
             this.stream.getTracks().forEach(track => track.stop());
             this.stream = null;
@@ -164,7 +424,6 @@ class ScreenRecorder {
         const blob = new Blob(this.recordedChunks, { type: this.mimeType });
         const fileName = `recording-${this.getTimestamp()}.${this.fileExtension}`;
 
-        // Try File System Access API (allows user to choose save location)
         if ('showSaveFilePicker' in window) {
             try {
                 const fileHandle = await window.showSaveFilePicker({
@@ -186,9 +445,7 @@ class ScreenRecorder {
                 this.recordedChunks = [];
                 return;
             } catch (error) {
-                // User cancelled the save dialog
                 if (error.name === 'AbortError') {
-                    // Still offer fallback download
                     if (confirm('Voulez-vous télécharger le fichier directement ?')) {
                         this.fallbackDownload(blob, fileName);
                     }
@@ -199,7 +456,6 @@ class ScreenRecorder {
             }
         }
 
-        // Fallback for browsers without File System Access API
         this.fallbackDownload(blob, fileName);
         this.recordedChunks = [];
     }
@@ -234,7 +490,6 @@ function checkBrowserSupport() {
     const isSecure = window.isSecureContext;
     const hasAPI = navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia;
 
-    // Mobile devices don't support screen recording
     if (isMobile) {
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         document.querySelector('main').innerHTML = `
@@ -278,7 +533,6 @@ function checkBrowserSupport() {
         return false;
     }
 
-    // Not secure context (HTTP instead of HTTPS)
     if (!isSecure) {
         document.querySelector('main').innerHTML = `
             <div style="text-align: center; padding: 3rem 1rem;">
@@ -292,7 +546,6 @@ function checkBrowserSupport() {
         return false;
     }
 
-    // API not available
     if (!hasAPI) {
         document.querySelector('main').innerHTML = `
             <div style="text-align: center; padding: 3rem 1rem;">
