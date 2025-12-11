@@ -36,6 +36,7 @@ class ScreenRecorder {
         this.btnStart = document.getElementById('btnStart');
         this.btnStop = document.getElementById('btnStop');
         this.audioToggle = document.getElementById('audioToggle');
+        this.regionToggle = document.getElementById('regionToggle');
         this.sourceButtons = document.querySelectorAll('.source-btn');
         this.regionOverlay = document.getElementById('regionOverlay');
         this.selectionBox = document.getElementById('selectionBox');
@@ -95,8 +96,7 @@ class ScreenRecorder {
         const options = {
             video: {
                 cursor: 'always',
-                displaySurface: this.selectedSource === 'region' ? 'monitor' :
-                               this.selectedSource === 'screen' ? 'monitor' :
+                displaySurface: this.selectedSource === 'screen' ? 'monitor' :
                                this.selectedSource === 'window' ? 'window' : 'browser'
             },
             audio: this.audioToggle.checked
@@ -110,7 +110,7 @@ class ScreenRecorder {
     }
 
     async handleStart() {
-        if (this.selectedSource === 'region') {
+        if (this.regionToggle.checked) {
             await this.startRegionSelection();
         } else {
             await this.startRecording();
